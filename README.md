@@ -19,7 +19,7 @@ The easiest way to install it is using pip:
 ```bash
 pip install face-detection
 ```
-
+or
 ```bash
 pip install git+https://github.com/elliottzheng/face-detection.git@master
 
@@ -48,7 +48,7 @@ from face_detection import RetinaFace
 
 detector = RetinaFace()
 img= io.imread('examples/obama.jpg')
-all_faces = detector([img,img]) # return image list of all images
+all_faces = detector([img,img]) # return faces list of all images
 box, landmarks, score = all_faces[0][0]
 ```
 
