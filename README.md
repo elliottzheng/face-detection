@@ -20,6 +20,11 @@ The easiest way to install it is using pip:
 pip install face-detection
 ```
 
+```bash
+pip install git+https://github.com/elliottzheng/face-detection.git@master
+
+```
+
 ## Usage
 ##### Detect face and five landmarks on single image
 ```python
@@ -34,6 +39,7 @@ box, landmarks, score = faces[0]
 ##### Batch input for faster detection
 
 All the input images must of the same size.
+
 Detector handles batch input faster than the same amount of single input. 
 
 ```python
