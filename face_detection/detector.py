@@ -18,6 +18,7 @@ def relative(path):
 
 class RetinaFace:
     def __init__(self, gpu_id=-1, model_path=relative("weights/mobilenet0.25_Final.pth")):
+        self.gpu_id = gpu_id
         self.device = torch.device("cpu") if gpu_id == -1 else torch.device("cuda", gpu_id)
         self.model = load_net(model_path, self.device)
 
@@ -28,7 +29,10 @@ class RetinaFace:
             elif len(images.shape) == 4:
                 return batch_detect(self.model, images, self.device)
         elif isinstance(images, list):
-            return batch_detect(self.model, np.array(images), self.device)
+            if self.gpu_id != -1:
+                return batch_detect(self.model, np.array(images), self.device)
+            else:
+                return [batch_detect(self.model, [image], self.device) for image in images]
         else:
             raise NotImplementedError()
 
