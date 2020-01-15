@@ -7,7 +7,7 @@ from face_detection import RetinaFace
 if __name__ == "__main__":
     detector = RetinaFace()
     img = io.imread('examples/obama.jpg')
-    size = 200
+    size = 1
     batch_input = [img] * size
     start = time.time()
     faces = detector(batch_input)
@@ -16,6 +16,3 @@ if __name__ == "__main__":
     for i in range(size):
         faces = detector(img)
     print(time.time() - start)
-
-    # box, landmarks, score = faces[0]
-    # print(box)
