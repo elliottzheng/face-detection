@@ -1,20 +1,18 @@
 import time
-
 import torch
-
 from face_detection import RetinaFace
+import numpy as np
+import cv2
 
 if __name__ == "__main__":
-    detector = RetinaFace(0)
-    img = torch.zeros(35, 2500, 2500, 3).to(torch.uint8) * 255
-    # size = 500
-    # batch_input = [img] * size
-    start = time.time()
-    faces = detector(img)
-    # import cv2
-    # t = faces[0][0]
-    # for img_faces, img2 in zip(faces, batch_input):
-    #     box, landmarks, score = img_faces[0]
-    #     box = box.astype(np.int)
-    #     cv2.imshow("", img2[box[1]:box[3], box[0]:box[2]])
-    #     cv2.waitKey(0)
+    detector=RetinaFace(0,model_path="face_detection\weights\Resnet50_Final.pth",network="resnet50")
+    # detector=RetinaFace(0)
+    img=cv2.cvtColor(cv2.imread("examples/obama.jpg"),cv2.COLOR_BGR2RGB)
+    for i in range(5):
+        start = time.time()
+        faces = detector(img)
+        print(time.time()-start)
+        box, landmarks, score = faces[0]
+        box = box.astype(np.int)
+        cv2.imshow("", img[box[1]:box[3], box[0]:box[2]])
+        cv2.waitKey(0)
