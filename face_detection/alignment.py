@@ -354,24 +354,17 @@ def check_keys(model, pretrained_state_dict):
     ckpt_keys = set(pretrained_state_dict.keys())
     model_keys = set(model.state_dict().keys())
     used_pretrained_keys = model_keys & ckpt_keys
-    unused_pretrained_keys = ckpt_keys - model_keys
-    missing_keys = model_keys - ckpt_keys
-    # print('Missing keys:{}'.format(len(missing_keys)))
-    # print('Unused checkpoint keys:{}'.format(len(unused_pretrained_keys)))
-    # print('Used keys:{}'.format(len(used_pretrained_keys)))
     assert len(used_pretrained_keys) > 0, 'load NONE from pretrained checkpoint'
     return True
 
 
 def remove_prefix(state_dict, prefix):
     ''' Old style model is stored with all names of parameters sharing common prefix 'module.' '''
-    # print('remove prefix \'{}\''.format(prefix))
     f = lambda x: x.split(prefix, 1)[-1] if x.startswith(prefix) else x
     return {f(key): value for key, value in state_dict.items()}
 
 
 def load_model(model, pretrained_path, load_to_cpu):
-    # print('Loading pretrained model from {}'.format(pretrained_path))
     if load_to_cpu:
         pretrained_dict = torch.load(pretrained_path, map_location=lambda storage, loc: storage)
     else:
@@ -404,7 +397,49 @@ def parse_det(det):
     return box, landmarks, score
 
 
-def batch_detect(net, images, device):
+def post_process(loc, conf, landms, prior_data, cfg, scale, scale1, resize, confidence_threshold, top_k, nms_threshold,
+                 keep_top_k):
+    boxes = decode(loc, prior_data, cfg['variance'])
+    boxes = boxes * scale / resize
+    boxes = boxes.cpu().numpy()
+    scores = conf.cpu().numpy()[:, 1]
+    landms_copy = decode_landm(landms, prior_data, cfg['variance'])
+
+    landms_copy = landms_copy * scale1 / resize
+    landms_copy = landms_copy.cpu().numpy()
+
+    # ignore low scores
+    inds = np.where(scores > confidence_threshold)[0]
+    boxes = boxes[inds]
+    landms_copy = landms_copy[inds]
+    scores = scores[inds]
+
+    # keep top-K before NMS
+    order = scores.argsort()[::-1][:top_k]
+    boxes = boxes[order]
+    landms_copy = landms_copy[order]
+    scores = scores[order]
+
+    # do NMS
+    dets = np.hstack((boxes, scores[:, np.newaxis])).astype(np.float32, copy=False)
+    keep = py_cpu_nms(dets, nms_threshold)
+    # keep = nms(dets, args.nms_threshold,force_cpu=args.cpu)
+    dets = dets[keep, :]
+    landms_copy = landms_copy[keep]
+
+    # keep top-K faster NMS
+    dets = dets[:keep_top_k, :]
+    landms_copy = landms_copy[:keep_top_k, :]
+
+    dets = np.concatenate((dets, landms_copy), axis=1)
+    # show image
+    dets = sorted(dets, key=lambda x: x[4], reverse=True)
+    dets = [parse_det(x) for x in dets]
+
+    return dets
+
+
+def batch_detect(net, images, device, is_tensor=False, normalized=False):
     with torch.no_grad():
         confidence_threshold = 0.02
         cfg = cfg_mnet
@@ -412,67 +447,36 @@ def batch_detect(net, images, device):
         nms_threshold = 0.4
         keep_top_k = 750
         resize = 1
-        try:
-            img = np.float32(images)
-        except ValueError:
-            raise NotImplementedError("Input images must of same size")
-
-        batch_size, im_height, im_width, _ = img.shape
-        scale = torch.Tensor([im_width, im_height, im_width, im_height])
-        img -= (104, 117, 123)
-        img = img.transpose(0, 3, 1, 2)
-        img = torch.from_numpy(img)
+        if not is_tensor:
+            try:
+                img = np.float32(images)
+            except ValueError:
+                raise NotImplementedError("Input images must of same size")
+            img = torch.from_numpy(img)
+        else:
+            img = images.float()
         img = img.to(device)
+        mean = torch.as_tensor([104, 117, 123], dtype=img.dtype, device=img.device).unsqueeze(0).unsqueeze(0).unsqueeze(
+            0)
+        img -= mean
+        img = img.permute(0, 3, 1, 2)
+        batch_size, _, im_height, im_width, = img.shape
+        scale = torch.as_tensor([im_width, im_height, im_width, im_height], dtype=img.dtype, device=img.device)
         scale = scale.to(device)
 
         loc, conf, landms = net(img)  # forward pass
 
         priorbox = PriorBox(cfg, image_size=(im_height, im_width))
         priors = priorbox.forward()
-        priors = priors.to(device)
-        prior_data = priors.data
+        prior_data = priors.to(device)
+        scale1 = torch.as_tensor([img.shape[3], img.shape[2], img.shape[3], img.shape[2],
+                                  img.shape[3], img.shape[2], img.shape[3], img.shape[2],
+                                  img.shape[3], img.shape[2]], dtype=img.dtype, device=img.device)
+        scale1 = scale1.to(device)
 
-        all_dets = []
-        for i in range(img.shape[0]):
-            boxes = decode(loc[i], prior_data, cfg['variance'])
-            boxes = boxes * scale / resize
-            boxes = boxes.cpu().numpy()
-            scores = conf[i].data.cpu().numpy()[:, 1]
-            landms_copy = decode_landm(landms[i], prior_data, cfg['variance'])
-            scale1 = torch.Tensor([img.shape[3], img.shape[2], img.shape[3], img.shape[2],
-                                   img.shape[3], img.shape[2], img.shape[3], img.shape[2],
-                                   img.shape[3], img.shape[2]])
-            scale1 = scale1.to(device)
-            landms_copy = landms_copy * scale1 / resize
-            landms_copy = landms_copy.cpu().numpy()
-
-            # ignore low scores
-            inds = np.where(scores > confidence_threshold)[0]
-            boxes = boxes[inds]
-            landms_copy = landms_copy[inds]
-            scores = scores[inds]
-
-            # keep top-K before NMS
-            order = scores.argsort()[::-1][:top_k]
-            boxes = boxes[order]
-            landms_copy = landms_copy[order]
-            scores = scores[order]
-
-            # do NMS
-            dets = np.hstack((boxes, scores[:, np.newaxis])).astype(np.float32, copy=False)
-            keep = py_cpu_nms(dets, nms_threshold)
-            # keep = nms(dets, args.nms_threshold,force_cpu=args.cpu)
-            dets = dets[keep, :]
-            landms_copy = landms_copy[keep]
-
-            # keep top-K faster NMS
-            dets = dets[:keep_top_k, :]
-            landms_copy = landms_copy[:keep_top_k, :]
-
-            dets = np.concatenate((dets, landms_copy), axis=1)
-            # show image
-            dets = sorted(dets, key=lambda x: x[4], reverse=True)
-
-            all_dets.append([parse_det(x) for x in dets])
+        all_dets = [
+            post_process(loc_i, conf_i, landms_i, prior_data, cfg, scale, scale1, resize, confidence_threshold, top_k,
+                         nms_threshold,
+                         keep_top_k) for loc_i, conf_i, landms_i in zip(loc, conf, landms)]
 
         return all_dets
