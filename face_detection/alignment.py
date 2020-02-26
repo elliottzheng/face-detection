@@ -1,4 +1,5 @@
 from itertools import product as product
+from math import ceil
 
 import numpy as np
 import torch
@@ -6,7 +7,6 @@ import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models._utils as _utils
-from math import ceil
 
 
 def conv_bn(inp, oup, stride=1, leaky=0):
