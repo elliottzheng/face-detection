@@ -41,5 +41,5 @@ setup(
     long_description_content_type="text/markdown",  # 指定包文档格式为markdown
     packages=["face_detection"],
     install_requires=["numpy", "torch", "torchvision"],
-    #   package_data={'face_detection': ['weights/*.pth']}
+    package_data={'face_detection': ['weights/*.pth']}
 )
