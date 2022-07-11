@@ -2,8 +2,6 @@ from os import path as os_path
 
 from setuptools import setup
 
-import face_detection
-
 this_directory = os_path.abspath(os_path.dirname(__file__))
 
 
@@ -25,7 +23,7 @@ def read_requirements(filename):
 
 setup(
     name="face-detection",
-    version=face_detection.__version__,
+    version='1.0.5',
     description="Fast and reliable face detection with RetinaFace",
     author="Elliott Zheng",
     author_email="admin@hypercube.top",
