@@ -1,3 +1,6 @@
+## 🚧This repo is no longer maintained, it can be seamlessly replaced with the new repo [batch-face](https://github.com/elliottzheng/batch-face) with the exact same usage.🚧 
+**The [batch-face](https://github.com/elliottzheng/batch-face) provides more utility for face detection, face alignment and face reconstruction.**
+
 # Face Detection
 
 Fast and reliable face detection with [RetinaFace](https://arxiv.org/abs/1905.00641).
