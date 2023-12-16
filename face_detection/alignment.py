@@ -342,7 +342,7 @@ def py_cpu_nms(dets, thresh):
 
 
 class PriorBox(object):
-    def __init__(self, cfg, image_size=None, phase="train"):
+    def __init__(self, cfg, image_size=None, phase="train", device="cpu"):
         super(PriorBox, self).__init__()
         self.min_sizes = cfg["min_sizes"]
         self.steps = cfg["steps"]
@@ -353,29 +353,29 @@ class PriorBox(object):
             for step in self.steps
         ]
         self.name = "s"
+        self.device=device
 
     def forward(self):
         anchors = []
         for k, f in enumerate(self.feature_maps):
-            min_sizes = self.min_sizes[k]
-            for i, j in product(range(f[0]), range(f[1])):
-                for min_size in min_sizes:
-                    s_kx = min_size / self.image_size[1]
-                    s_ky = min_size / self.image_size[0]
-                    dense_cx = [
-                        x * self.steps[k] / self.image_size[1] for x in [j + 0.5]
-                    ]
-                    dense_cy = [
-                        y * self.steps[k] / self.image_size[0] for y in [i + 0.5]
-                    ]
-                    for cy, cx in product(dense_cy, dense_cx):
-                        anchors += [cx, cy, s_kx, s_ky]
+            # Create meshgrid using torch
+            grid_x, grid_y = torch.meshgrid(torch.arange(f[1], device=self.device), torch.arange(f[0], device=self.device), indexing='xy')
+            cx = (grid_x + 0.5) * self.steps[k] / self.image_size[1]
+            cy = (grid_y + 0.5) * self.steps[k] / self.image_size[0]
+            cx = cx.unsqueeze(-1)
+            cy = cy.unsqueeze(-1)
+            archors_per_feature_map = []
+            for min_size in self.min_sizes[k]:
+                s_kx = min_size / self.image_size[1]
+                s_ky = min_size / self.image_size[0]
+                anchor = torch.stack((cx, cy, torch.full_like(cx, s_kx), torch.full_like(cy, s_ky)), dim=-1)
+                archors_per_feature_map.append(anchor)
+            anchors.append(torch.stack(archors_per_feature_map, dim=-2).reshape(-1, 4))
 
-        # back to torch land
-        output = torch.Tensor(anchors).view(-1, 4)
+        anchors = torch.cat(anchors, dim=0)
         if self.clip:
-            output.clamp_(max=1, min=0)
-        return output
+            anchors = torch.clamp(anchors, 0, 1)
+        return anchors
 
 
 cfg_mnet = {
@@ -562,9 +562,8 @@ def batch_detect(net, images, device, is_tensor=False, normalized=False):
 
         loc, conf, landms = net(img)  # forward pass
 
-        priorbox = PriorBox(cfg, image_size=(im_height, im_width))
-        priors = priorbox.forward()
-        prior_data = priors.to(device)
+        priorbox = PriorBox(cfg, image_size=(im_height, im_width), device=device)
+        prior_data = priorbox.forward()
         scale1 = torch.as_tensor(
             [
                 img.shape[3],
